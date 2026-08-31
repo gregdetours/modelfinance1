@@ -2,64 +2,53 @@ import streamlit as st
 import plotly.express as px
 from src.utils.loader import DataLoader
 from src.core.portfolio import Patrimoine
+from src.core.events import DepenseExceptionnelle # On importe la classe fille
+from src.core.engine import Simulateur
 
-# Configuration de la page
 st.set_page_config(page_title="Simulateur Financier", layout="wide")
-
-st.title("💸 Simulateur Financier - Test du Moteur Mathématique")
+st.title("💸 Simulateur Financier - La Timeline")
 
 try:
-    # 1. Chargement des données brutes depuis Excel
+    # 1. Chargement des données
     loader = DataLoader()
     df_patrimoine = loader.load_patrimoine()
+    df_evenements = loader.load_evenements()
     
-    # 2. Initialisation du moteur orienté objet
+    # 2. Initialisation des objets
     mon_patrimoine = Patrimoine(df_patrimoine)
     
-    st.header("1. Photographie à l'Instant T=0")
-    
-    # Création de deux colonnes pour structurer l'affichage
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Affichage d'une belle métrique pour le total
-        valeur_tot = mon_patrimoine.valeur_totale()
-        st.metric(label="Valeur Totale du Patrimoine", value=f"{valeur_tot:,.2f} €".replace(',', ' '))
-        
-        # Affichage du détail brut
-        st.write("Détail des poches :")
-        for poche in mon_patrimoine.poches:
-            st.write(f"- **{poche.nom}** ({poche.enveloppe}) : {poche.solde:,.2f} €".replace(',', ' '))
-    
-    with col2:
-        # 3. Création du premier camembert (Donut)
-        repartition_risque = mon_patrimoine.valeur_par_risque()
-        
-        fig = px.pie(
-            names=list(repartition_risque.keys()), 
-            values=list(repartition_risque.values()), 
-            title="Répartition par Profil de Risque",
-            hole=0.4, # Transforme le camembert en "donut"
-            color_discrete_sequence=['#2ecc71', '#e74c3c'] # Vert pour sécurisé, Rouge pour risqué
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Transformation des lignes Excel en objets d'événements Python
+    liste_evenements = []
+    for _, row in df_evenements.iterrows():
+        if row['Type_Action'] == 'Depense_Exceptionnelle':
+            nouvel_event = DepenseExceptionnelle(
+                nom=row['Nom_Evenement'],
+                date_declenchement=row['Date_Declenchement'],
+                cible=row['Cible'],
+                valeur=row['Valeur'],
+                duree_mois=row['Duree_Mois']
+            )
+            liste_evenements.append(nouvel_event)
 
-    # 4. Test du vieillissement mathématique
-    st.header("2. Test de la machine à voyager dans le temps")
-    st.info("Clique sur ce bouton pour simuler un mois de rendement sur toutes tes enveloppes simultanément.")
+    # 3. Lancement du Moteur sur 10 ans (120 mois)
+    moteur = Simulateur(mon_patrimoine, liste_evenements, date_debut="08/2026")
+    df_timeline = moteur.run(duree_mois=120)
+
+    # 4. Affichage du Graphique
+    st.header("Projection du Patrimoine Global")
     
-    if st.button("Simuler +1 Mois de rendements"):
-        # On applique la méthode à chaque objet Poche
-        for poche in mon_patrimoine.poches:
-            poche.appliquer_rendement_mensuel()
-            
-        nouvelle_valeur = mon_patrimoine.valeur_totale()
-        st.success("Le temps a avancé d'un mois !")
-        st.metric(
-            label="Nouvelle Valeur Totale (après intérêts)", 
-            value=f"{nouvelle_valeur:,.2f} €".replace(',', ' '),
-            delta=f"+ {nouvelle_valeur - valeur_tot:,.2f} €" # Affiche la plus-value en vert
-        )
+    fig = px.line(
+        df_timeline, 
+        x="Date", 
+        y="Valeur_Patrimoine", 
+        title="Évolution du patrimoine sur 10 ans",
+        markers=True # Ajoute des points sur la courbe pour plus de lisibilité
+    )
+    
+    # On force l'axe Y à commencer à zéro pour éviter un effet de loupe trompeur
+    fig.update_layout(yaxis=dict(rangemode='tozero'))
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 except Exception as e:
-    st.error(f"❌ Une erreur est survenue : {e}")
+    st.error(f"❌ Erreur : {e}")
