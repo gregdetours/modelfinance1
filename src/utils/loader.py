@@ -34,24 +34,27 @@ class DataLoader:
         parametres_dict = pd.Series(df.Valeur.values, index=df.Parametre).to_dict()
         return parametres_dict
 
-    def load_evenements(self) -> pd.DataFrame:
+    def load_evenements(self, filtrer_actifs: bool = True) -> pd.DataFrame:
             """Charge l'onglet Evenements et nettoie les formats capricieux d'Excel."""
             df = pd.read_excel(self.file_path, sheet_name="Evenements")
             df = df.dropna(how='all')
             
-            # 1. Blindage de la colonne Actif (Accepte les VRAI, TRUE, et 1)
+            # 1. Blindage de la colonne Actif et conversion en vrai Booléen
             if 'Actif' in df.columns:
                 mots_clefs = ['TRUE', 'VRAI', '1', '1.0', 'OUI']
-                # On convertit tout en majuscules sans espaces pour être sûr à 100%
-                df = df[df['Actif'].astype(str).str.strip().str.upper().isin(mots_clefs)]
+                # On force la conversion en True/False pour Streamlit
+                df['Actif'] = df['Actif'].astype(str).str.strip().str.upper().isin(mots_clefs)
+                
+                # On filtre uniquement si on le demande
+                if filtrer_actifs:
+                    df = df[df['Actif'] == True]
                 
             # 2. Blindage de la colonne Date (Force le format texte MM/YYYY)
             if 'Date_Declenchement' in df.columns:
                 def nettoyer_date(d):
-                    # Si Excel a envoyé un objet Date (Timestamp), on le force en texte "MM/YYYY"
+                    # Si Excel a envoyé un objet Date, on le force en texte
                     if isinstance(d, pd.Timestamp) or "datetime" in str(type(d)):
                         return d.strftime("%m/%Y")
-                    # Sinon on renvoie le texte tel quel (en enlevant les espaces parasites)
                     return str(d).strip()
                     
                 df['Date_Declenchement'] = df['Date_Declenchement'].apply(nettoyer_date)
